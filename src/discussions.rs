@@ -74,16 +74,17 @@ pub async fn process_discussions(
 
                 for discussion in discussions {
                     if let Some(ref folder_path) = discussions_folder_path {
+                        let discussion_name = discussion_name(&discussion);
+
                         // download attachments (TODO: not sure if this is needed)
-                        let discussion_folder_path =
-                            folder_path.join(sanitize_filename::sanitize(&discussion.title));
+                        let discussion_folder_path = folder_path.join(&discussion_name);
 
                         let files: Vec<File> = discussion
                             .attachments
                             .clone()
                             .into_iter()
                             .map(|mut f| {
-                                f.display_name = format!("{}_{}", f.id, &f.display_name);
+                                f.display_name = format!("{}_{}", f.id, f.display_name);
                                 f
                             })
                             .collect();
@@ -105,7 +106,7 @@ pub async fn process_discussions(
                             (
                                 discussion.message.clone(),
                                 folder_path.clone(),
-                                discussion.title.clone()
+                                discussion_name
                             ),
                             (String, PathBuf, String),
                             options.clone()
@@ -205,7 +206,7 @@ fn generate_discussion_html(
     html.push_str("\n        </div>\n");
     html.push_str(&format!(
         "        <div class=\"discussion-message\">{}</div>\n",
-        &discussion.message
+        discussion.message
     ));
     html.push_str("    </div>\n");
 
@@ -254,6 +255,10 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+fn discussion_name(discussion: &Discussion) -> String {
+    sanitize_filename::sanitize(format!("{}_{}", discussion.id, discussion.title))
+}
+
 async fn process_discussion_view(
     (url, path, discussion): (String, PathBuf, Discussion),
     options: Arc<ProcessOptions>,
@@ -261,7 +266,7 @@ async fn process_discussion_view(
     let resp = get_canvas_api(url.clone(), &options).await?;
     let discussion_view_body = resp.text().await?;
 
-    let discussion_name = sanitize_filename::sanitize(&discussion.title);
+    let discussion_name = discussion_name(&discussion);
     if let Some(discussion_view_json) = get_raw_json_path(
         &path,
         &format!("{discussion_name}.json"),
@@ -336,7 +341,7 @@ async fn process_discussion_view(
     let files = attachments_all
         .into_iter()
         .map(|mut f| {
-            f.display_name = format!("{}_{}", f.id, &f.display_name);
+            f.display_name = format!("{}_{}", f.id, f.display_name);
             f
         })
         .collect();
@@ -351,4 +356,36 @@ async fn process_discussion_view(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn discussion(id: u32, title: &str) -> Discussion {
+        Discussion {
+            id,
+            title: title.to_string(),
+            message: String::new(),
+            posted_at: None,
+            author: None,
+            attachments: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn discussion_names_include_id_and_sanitize_title() {
+        assert_eq!(
+            discussion_name(&discussion(12345, "Reading: week/one")),
+            "12345_Reading weekone"
+        );
+    }
+
+    #[test]
+    fn identical_titles_have_distinct_discussion_names() {
+        assert_ne!(
+            discussion_name(&discussion(12345, "Reading for next week")),
+            discussion_name(&discussion(67890, "Reading for next week"))
+        );
+    }
 }

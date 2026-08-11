@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Module items under a `SubHeader` are now placed inside that subheader's folder instead of being flattened into the module folder. Files, pages, and `.url` shortcuts following a `SubHeader` are routed into a sibling section folder until the next `SubHeader`; ignored subheader folders also skip their contents.
+- Discussion and announcement HTML, JSON, and attachment folders now include the Canvas discussion ID in their names, preventing identically titled topics from overwriting or mixing their content.
 
 ## [0.4.1] - 2026-04-19
 
