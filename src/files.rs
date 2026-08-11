@@ -88,11 +88,14 @@ async fn download_file(
         .and_then(|ct_len| ct_len.to_str().ok()) // Unwraps the Option as &str
         .and_then(|ct_len| ct_len.parse().ok()) // Parses the Option as u64
         .unwrap_or(0); // Fallback to 0
-    let progress_bar = options
-        .progress_bars
-        .add(indicatif::ProgressBar::new(download_size));
+    // Configure the bar while hidden so MultiProgress never renders its
+    // full-width default style between add() and set_style(). A transient
+    // full-width bar can wrap and corrupt cursor-based redraws.
+    let progress_bar = indicatif::ProgressBar::hidden();
+    progress_bar.set_length(download_size);
     progress_bar.set_message(canvas_file.display_name.to_string());
     progress_bar.set_style(options.progress_style.clone());
+    let progress_bar = options.progress_bars.add(progress_bar);
 
     // Download
     while let Some(chunk) = resp.chunk().await? {
