@@ -82,15 +82,7 @@ pub async fn process_discussions(
                         // download attachments (TODO: not sure if this is needed)
                         let discussion_folder_path = folder_path.join(&discussion_name);
 
-                        let files: Vec<File> = discussion
-                            .attachments
-                            .clone()
-                            .into_iter()
-                            .map(|mut f| {
-                                f.display_name = format!("{}_{}", f.id, f.display_name);
-                                f
-                            })
-                            .collect();
+                        let files: Vec<File> = discussion.attachments.clone();
                         let mut filtered_files =
                             filter_files(&options, &discussion_folder_path, files);
                         if !filtered_files.is_empty() {
@@ -341,13 +333,7 @@ async fn process_discussion_view(
         }
     }
 
-    let files = attachments_all
-        .into_iter()
-        .map(|mut f| {
-            f.display_name = format!("{}_{}", f.id, f.display_name);
-            f
-        })
-        .collect();
+    let files = attachments_all;
     let discussion_folder_path = path.join(discussion_name);
     let mut filtered_files = filter_files(&options, &discussion_folder_path, files);
     if !filtered_files.is_empty() {

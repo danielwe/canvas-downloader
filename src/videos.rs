@@ -16,7 +16,9 @@ use serde_json::json;
 use crate::api::get_canvas_api;
 use crate::canvas::{File, PanoptoDeliveryInfo, PanoptoSessionInfo, ProcessOptions, Session};
 use crate::files::filter_files;
-use crate::utils::{create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json};
+use crate::utils::{
+    create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json, sanitize_typed_name,
+};
 
 pub async fn process_videos(
     (url, id, path): (String, u32, PathBuf),
@@ -155,9 +157,7 @@ async fn process_video_folder(
         &options.base_path,
         options.save_json,
     )?;
-    let mut sessions_file = sessions_json
-        .as_ref()
-        .and_then(|p| std::fs::File::create(p.clone()).ok());
+    let mut aggregated_sessions: Option<serde_json::Value> = None;
 
     for i in 0.. {
         let sessions_result = client
@@ -190,23 +190,23 @@ async fn process_video_folder(
             .await?;
 
         let sessions_text = sessions_result.text().await?;
-        if let Some(ref mut file) = sessions_file {
-            let pretty_json = prettify_json(&sessions_text).unwrap_or(sessions_text.clone());
-            file.write_all(pretty_json.as_bytes())?;
-        }
-
         let folder_sessions = serde_json::from_str::<serde_json::Value>(&sessions_text)?;
         let folder_sessions_results = folder_sessions
             .get("d")
             .ok_or(anyhow!("Could not get Panopto Folder Sessions"))?;
 
+        aggregate_panopto_page(&mut aggregated_sessions, folder_sessions.clone())?;
         let sessions =
             serde_json::from_value::<PanoptoSessionInfo>(folder_sessions_results.clone())?;
 
         // Subfolders are the same, so process only the first request
         if i == 0 {
             for subfolder in sessions.Subfolders {
-                let subfolder_path = path.join(subfolder.Name);
+                let subfolder_path = path.join(sanitize_typed_name(
+                    "panopto-folder",
+                    &subfolder.ID,
+                    &subfolder.Name,
+                ));
                 if !create_folder_if_not_exist_or_ignored(&subfolder_path, &options)? {
                     continue;
                 }
@@ -236,7 +236,86 @@ async fn process_video_folder(
             )
         }
     }
+    if let (Some(sessions_path), Some(aggregated)) = (sessions_json, aggregated_sessions) {
+        let mut file = std::fs::File::create(sessions_path)?;
+        file.write_all(serde_json::to_string_pretty(&aggregated)?.as_bytes())?;
+    }
     Ok(())
+}
+
+fn aggregate_panopto_page(
+    aggregate: &mut Option<serde_json::Value>,
+    page: serde_json::Value,
+) -> Result<()> {
+    if aggregate.is_none() {
+        *aggregate = Some(page);
+        return Ok(());
+    }
+    let page_results = page
+        .pointer("/d/Results")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow!("Panopto page has no Results array"))?;
+    let results = aggregate
+        .as_mut()
+        .and_then(|v| v.pointer_mut("/d/Results"))
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| anyhow!("aggregated Panopto response has no Results array"))?;
+    results.extend(page_results.iter().cloned());
+    Ok(())
+}
+
+fn panopto_session_name(result: &crate::canvas::PanoptoResult) -> String {
+    sanitize_typed_name("panopto-session", &result.DeliveryID, &result.SessionName)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panopto_pages_append_results_and_keep_first_subfolders() {
+        let mut aggregate = None;
+        aggregate_panopto_page(&mut aggregate, serde_json::json!({"d":{"Results":[{"id":1}],"Subfolders":[{"ID":"a"}],"TotalNumber":2}})).expect("first page");
+        aggregate_panopto_page(
+            &mut aggregate,
+            serde_json::json!({"d":{"Results":[{"id":2}],"Subfolders":[{"ID":"a"}]}}),
+        )
+        .expect("second page");
+        let value = aggregate.expect("aggregate");
+        assert_eq!(
+            value
+                .pointer("/d/Results")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/d/Subfolders")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            value.pointer("/d/TotalNumber").and_then(|v| v.as_u64()),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn panopto_delivery_ids_disambiguate_one_session() {
+        let result = |delivery_id: &str| crate::canvas::PanoptoResult {
+            DeliveryID: delivery_id.into(),
+            SessionID: "shared-session".into(),
+            SessionName: "Lecture".into(),
+            StartTime: String::new(),
+            IosVideoUrl: String::new(),
+        };
+        assert_ne!(
+            panopto_session_name(&result("delivery-1")),
+            panopto_session_name(&result("delivery-2"))
+        );
+    }
 }
 
 async fn process_session(
@@ -326,10 +405,11 @@ async fn process_session(
                         uri_id,
                         file_uri
                     );
+                    let session_name = panopto_session_name(&result);
                     let download_file_name = if file_uri_ext.is_empty() {
-                        result.SessionName
+                        session_name
                     } else {
-                        format!("{}.{}", result.SessionName, file_uri_ext)
+                        format!("{}.{}", session_name, file_uri_ext)
                     };
 
                     let date_match_rfc3339 = regex!(r"/Date\((\d+)\)/")

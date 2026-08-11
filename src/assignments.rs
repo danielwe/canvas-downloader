@@ -232,14 +232,7 @@ async fn process_submissions(
         let submissions_result = serde_json::from_str::<Submission>(&submissions_body);
         match submissions_result {
             Result::Ok(submissions) => {
-                let files = submissions
-                    .attachments
-                    .into_iter()
-                    .map(|mut file| {
-                        file.display_name = format!("{}_{}", file.id, file.display_name);
-                        file
-                    })
-                    .collect();
+                let files = submissions.attachments;
                 let mut filtered_files = filter_files(&options, &assignment_folder_path, files);
 
                 if !filtered_files.is_empty() {

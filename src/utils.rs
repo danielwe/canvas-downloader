@@ -119,6 +119,10 @@ pub fn prettify_json(json_str: &str) -> Result<String> {
     Ok(serde_json::to_string_pretty(&value)?)
 }
 
+pub fn sanitize_typed_name(kind: &str, id: &str, name: &str) -> String {
+    sanitize_filename::sanitize(format!("{kind}_{id}_{name}"))
+}
+
 pub fn sanitize_filename_with_id(id: u32, name: &str) -> String {
     sanitize_filename::sanitize(format!("{id}_{name}"))
 }
@@ -190,6 +194,26 @@ mod tests {
         assert_ne!(
             sanitize_filename_with_id(12345, "Reading for next week"),
             sanitize_filename_with_id(67890, "Reading for next week")
+        );
+    }
+
+    #[test]
+    fn typed_names_separate_namespaces_and_sanitize_after_prefixing() {
+        assert_eq!(
+            sanitize_typed_name("file", "42", "week/one"),
+            "file_42_weekone"
+        );
+        assert_ne!(
+            sanitize_typed_name("file", "42", "same"),
+            sanitize_typed_name("folder", "42", "same")
+        );
+        assert_ne!(
+            sanitize_typed_name("file", "42", "same"),
+            sanitize_filename_with_id(42, "same")
+        );
+        assert_ne!(
+            sanitize_typed_name("file", "42", "week/one"),
+            sanitize_typed_name("file", "43", "weekone")
         );
     }
 }

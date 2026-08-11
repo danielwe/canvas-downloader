@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Canvas Files folders (including each course's Files root folder) and files now use typed, stable ID-prefixed sanitized names (`folder_<id>_<name>` and `file_<id>_<name>`). Panopto subfolders and sessions likewise use their string identities. This prevents equal or sanitization-equivalent names from colliding across namespaces.
+- The completed global download queue is now deduplicated by destination and stable source identity before dry-run reporting or downloads; conflicting sources targeting one path fail clearly instead of racing or overwriting.
+- Saved `modules.json` and Panopto `sessions.json` files now aggregate every API page into one valid JSON document in API order while retaining raw response fields.
 - Module items under a `SubHeader` are now placed inside that subheader's folder instead of being flattened into the module folder. Files, pages, and `.url` shortcuts following a `SubHeader` are routed into a sibling section folder until the next `SubHeader`, including across API page boundaries; ignored subheader folders also skip their contents. Saved `module_items.json` files now contain every API page instead of only the final page.
 - Discussion and announcement HTML, JSON, and attachment folders now include the Canvas discussion ID in their names, preventing identically titled topics from overwriting or mixing their content.
 - Assignment and page HTML, JSON, and attachment folders now include their Canvas IDs, preventing identically titled content from overwriting or mixing files.

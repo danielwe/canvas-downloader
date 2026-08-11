@@ -21,9 +21,8 @@ fn idless_source(file: &File) -> String {
         .unwrap_or_else(|_| file.url.clone())
 }
 
-fn prefix_file_name(file: &mut File) {
+fn prefix_idless_file_name(file: &mut File) {
     if file.id != 0 {
-        file.display_name = format!("{}_{}", file.id, file.display_name);
         return;
     }
 
@@ -64,7 +63,7 @@ pub async fn process_html_links(
     .into_iter()
     .filter_map(|x| x.ok())
     .map(|mut file| {
-        prefix_file_name(&mut file);
+        prefix_idless_file_name(&mut file);
         file
     })
     .collect::<Vec<File>>();
@@ -88,7 +87,7 @@ pub async fn process_html_links(
         .into_iter()
         .filter_map(|x| x.ok())
         .map(|mut file| {
-            prefix_file_name(&mut file);
+            prefix_idless_file_name(&mut file);
             file
         })
         .collect::<Vec<File>>()

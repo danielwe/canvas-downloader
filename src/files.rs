@@ -1,4 +1,4 @@
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::ops::Add;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::api::get_canvas_api;
 use crate::api::get_pages;
 use crate::canvas::{File, FileResult, FolderResult, ProcessOptions};
-use crate::utils::{create_folder_if_not_exist_or_ignored, ignored};
+use crate::utils::{create_folder_if_not_exist_or_ignored, ignored, sanitize_typed_name};
 
 pub async fn atomic_download_file(file: File, options: Arc<ProcessOptions>) -> Result<()> {
     // Create tmp file from hash
@@ -119,14 +119,9 @@ pub async fn process_folders(
             Ok(FolderResult::Ok(folders)) => {
                 for folder in folders {
                     // println!("  * {} - {}", folder.id, folder.name);
-                    let sanitized_folder_name = sanitize_filename::sanitize(folder.name);
-                    // if the folder has no parent, it is the root folder of a course
-                    // so we avoid the extra directory nesting by not appending the root folder name
-                    let folder_path = if folder.parent_folder_id.is_some() {
-                        path.join(sanitized_folder_name)
-                    } else {
-                        path.clone()
-                    };
+                    let sanitized_folder_name =
+                        sanitize_typed_name("folder", &folder.id.to_string(), &folder.name);
+                    let folder_path = path.join(sanitized_folder_name);
 
                     match create_folder_if_not_exist_or_ignored(&folder_path, &options) {
                         Ok(false) => continue, // ignored
@@ -241,6 +236,9 @@ pub fn filter_files(options: &ProcessOptions, path: &Path, files: Vec<File>) -> 
     files
         .into_iter()
         .map(|mut f| {
+            if f.id != 0 {
+                f.display_name = sanitize_typed_name("file", &f.id.to_string(), &f.display_name);
+            }
             let sanitized = sanitize_filename::sanitize(&f.display_name);
             let nfc_name: String = sanitized.nfc().collect();
             let mut filepath = path.join(&nfc_name);
@@ -285,6 +283,40 @@ pub fn filter_files(options: &ProcessOptions, path: &Path, files: Vec<File>) -> 
         .collect()
 }
 
+fn source_identity(file: &File) -> String {
+    if file.id != 0 {
+        return format!("canvas-file:{}", file.id);
+    }
+    reqwest::Url::parse(&file.url)
+        .map(|mut url| {
+            url.set_query(None);
+            url.set_fragment(None);
+            format!("url:{url}")
+        })
+        .unwrap_or_else(|_| format!("url:{}", file.url.split('?').next().unwrap_or(&file.url)))
+}
+
+pub fn enforce_unique_destinations(files: &mut Vec<File>) -> Result<()> {
+    let mut destinations: HashMap<PathBuf, String> = HashMap::new();
+    let mut unique = Vec::with_capacity(files.len());
+    for file in files.drain(..) {
+        let identity = source_identity(&file);
+        match destinations.get(&file.filepath) {
+            Some(existing) if existing == &identity => {}
+            Some(existing) => anyhow::bail!(
+                "conflicting download destination {}: sources {existing} and {identity}",
+                file.filepath.display()
+            ),
+            None => {
+                destinations.insert(file.filepath.clone(), identity);
+                unique.push(file);
+            }
+        }
+    }
+    *files = unique;
+    Ok(())
+}
+
 pub async fn process_file_id(
     (url, path): (String, PathBuf),
     options: Arc<ProcessOptions>,
@@ -302,6 +334,51 @@ pub async fn process_file_id(
             tracing::error!("Error when getting file info at link:{url}, path:{path:?}\n{e:?}",);
             Err(Into::into(e))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(id: u32, url: &str, destination: &str) -> File {
+        File {
+            id,
+            folder_id: None,
+            display_name: "x".into(),
+            size: 1,
+            url: url.into(),
+            updated_at: "2020-01-01T00:00:00Z".into(),
+            locked_for_user: false,
+            filepath: destination.into(),
+        }
+    }
+
+    #[test]
+    fn global_destination_dedup_and_conflict_detection() {
+        let mut duplicates = vec![
+            file(7, "https://a/one?sig=1", "out"),
+            file(7, "https://a/two", "out"),
+        ];
+        enforce_unique_destinations(&mut duplicates)
+            .expect("same Canvas identity should deduplicate");
+        assert_eq!(duplicates.len(), 1);
+        let mut url_duplicates = vec![
+            file(0, "https://a/image?sig=1", "img"),
+            file(0, "https://a/image?sig=2", "img"),
+        ];
+        enforce_unique_destinations(&mut url_duplicates).expect("query strings are not identity");
+        assert_eq!(url_duplicates.len(), 1);
+        let mut different_origins = vec![
+            file(0, "https://a/image", "img"),
+            file(0, "https://a:8443/image", "img"),
+        ];
+        assert!(enforce_unique_destinations(&mut different_origins).is_err());
+        let mut conflict = vec![
+            file(1, "https://a/one", "out"),
+            file(2, "https://a/two", "out"),
+        ];
+        assert!(enforce_unique_destinations(&mut conflict).is_err());
     }
 }
 pub async fn prepare_link_for_download(

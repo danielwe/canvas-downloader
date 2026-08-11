@@ -35,7 +35,7 @@ use api::get_pages;
 use assignments::process_assignments;
 use canvas::ProcessOptions;
 use discussions::process_discussions;
-use files::{atomic_download_file, process_folders};
+use files::{atomic_download_file, enforce_unique_destinations, process_folders};
 use modules::process_modules;
 use pages::process_pages;
 use syllabus::process_syllabus;
@@ -451,7 +451,8 @@ async fn main() -> Result<()> {
     }
     println!();
 
-    let files_to_download = options.files_to_download.lock().await;
+    let mut files_to_download = options.files_to_download.lock().await;
+    enforce_unique_destinations(&mut files_to_download)?;
 
     if args.dry_run {
         // Dry run mode: just display what would be downloaded

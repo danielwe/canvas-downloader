@@ -34,7 +34,7 @@ pub(crate) enum FolderResult {
 
 #[derive(Deserialize)]
 pub struct Folder {
-    // pub id: u32,
+    pub id: u32,
     pub name: String,
     pub folders_url: String,
     pub files_url: String,
