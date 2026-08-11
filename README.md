@@ -1,8 +1,16 @@
+> [!NOTE]
+> This is a fork of <https://github.com/aik2mlj/canvas-downloader>, fixing a couple of issues I encountered:
+>
+> - File and folder naming conflicts, for example when multiple announcements have the same title, are avoided
+> - A bug where query parameters were combinatorially duplicated, ultimately leading to a panic, is fixed
+> - An issue increasing the likelihood of connection timeouts for courses with a lot of material is addressed
+> - Fallbacks and errors/warnings upon receiving HTTP 404 are improved
+>
+> I will likely **not** be maintaining this further. Scavenging this repo and submitting patches upstream is encouraged.
+
 # Canvas Downloader
 
 A command-line tool to download and organize all your Canvas course materials—files, syllabi, pages, modules, assignments, discussions, and announcements—into a clean local folder structure. Made in async Rust⚡.
-
-This is a maintained fork of [this project](https://github.com/bnjmnt4n/canvas-downloader). Also shout out to [this previous fork](https://github.com/rhgndf/canvas-downloader) that implements downloading additional materials.
 
 ## Installation
 
