@@ -119,6 +119,10 @@ pub fn prettify_json(json_str: &str) -> Result<String> {
     Ok(serde_json::to_string_pretty(&value)?)
 }
 
+pub fn sanitize_filename_with_id(id: u32, name: &str) -> String {
+    sanitize_filename::sanitize(format!("{id}_{name}"))
+}
+
 /// Get the path for a raw JSON file in a parallel "raw" folder structure
 /// Returns None if save_json is false
 ///
@@ -166,5 +170,26 @@ pub fn format_bytes(bytes: u64) -> String {
         format!("{:.1} {}", size, unit)
     } else {
         format!("{:.2} {}", size, unit)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn id_prefixed_names_are_sanitized() {
+        assert_eq!(
+            sanitize_filename_with_id(12345, "Reading: week/one"),
+            "12345_Reading weekone"
+        );
+    }
+
+    #[test]
+    fn ids_disambiguate_identical_names() {
+        assert_ne!(
+            sanitize_filename_with_id(12345, "Reading for next week"),
+            sanitize_filename_with_id(67890, "Reading for next week")
+        );
     }
 }

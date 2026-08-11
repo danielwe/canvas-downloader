@@ -59,16 +59,14 @@ pub(crate) enum PageResult {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Page {
-    // pub page_id: u32,
     pub url: String,
-    pub title: String,
     // pub updated_at: String,
     // pub locked_for_user: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PageBody {
-    // pub page_id: u32,
+    pub page_id: u32,
     // pub url: String,
     pub title: String,
     pub body: Option<String>,
@@ -208,7 +206,7 @@ pub(crate) enum ModuleResult {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Module {
-    // pub id: u32,
+    pub id: u32,
     pub name: String,
     // pub position: u32,
     // pub unlock_at: Option<String>,
@@ -230,7 +228,7 @@ pub(crate) enum ModuleItemResult {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ModuleItem {
-    // pub id: u32,
+    pub id: u32,
     pub title: String,
     #[serde(rename = "type")]
     pub item_type: String, // "File", "Page", "Discussion", "Assignment", "Quiz", "SubHeader", "ExternalUrl", "ExternalTool"

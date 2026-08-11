@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -10,7 +10,10 @@ use crate::api::get_pages;
 use crate::canvas::{File, ModuleItemResult, ModuleResult, ProcessOptions};
 use crate::files::{filter_files, process_file_id};
 use crate::pages::process_page_body;
-use crate::utils::{create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json};
+use crate::utils::{
+    create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json,
+    sanitize_filename_with_id,
+};
 
 pub async fn process_modules(
     (url, path): (String, PathBuf),
@@ -61,7 +64,7 @@ pub async fn process_modules(
                 for module in modules {
                     if let Some(ref modules_path) = modules_folder_path {
                         let module_path =
-                            modules_path.join(sanitize_filename::sanitize(&module.name));
+                            modules_path.join(sanitize_filename_with_id(module.id, &module.name));
                         if !create_folder_if_not_exist_or_ignored(&module_path, &options)? {
                             continue;
                         }
@@ -136,6 +139,7 @@ async fn process_module_items(
                 let mut files_to_process: Vec<(PathBuf, File)> = Vec::new();
 
                 for item in items {
+                    let item_name = sanitize_filename_with_id(item.id, &item.title);
                     match item.item_type.as_str() {
                         "File" => {
                             let Some(section_path) = current_section.as_ref() else {
@@ -154,7 +158,9 @@ async fn process_module_items(
                                 )
                                 .await
                                 {
-                                    Ok(file) => {
+                                    Ok(mut file) => {
+                                        file.display_name =
+                                            format!("{}_{}", file.id, file.display_name);
                                         files_to_process.push((section_path.clone(), file));
                                     }
                                     Err(e) => {
@@ -172,16 +178,15 @@ async fn process_module_items(
                                 continue;
                             };
                             if let Some(full_page_url) = item.url {
-                                let item_path =
-                                    section_path.join(sanitize_filename::sanitize(&item.title));
+                                let item_path = section_path.join(item_name);
                                 if !create_folder_if_not_exist_or_ignored(&item_path, &options)? {
                                     continue;
                                 }
 
                                 fork!(
                                     process_page_body,
-                                    (full_page_url, item.title, item_path),
-                                    (String, String, PathBuf),
+                                    (full_page_url, item_path),
+                                    (String, PathBuf),
                                     options.clone()
                                 );
                             }
@@ -209,10 +214,7 @@ async fn process_module_items(
                                 continue;
                             };
                             if let Some(external_url) = &item.external_url {
-                                let url_file = section_path.join(format!(
-                                    "{}.url",
-                                    sanitize_filename::sanitize(&item.title)
-                                ));
+                                let url_file = section_path.join(format!("{item_name}.url"));
                                 if let Ok(mut file) = std::fs::File::create(&url_file) {
                                     let _ = writeln!(file, "[InternetShortcut]");
                                     let _ = writeln!(file, "URL={}", external_url);
@@ -223,8 +225,7 @@ async fn process_module_items(
                             // SubHeader starts a new section. Subheader folders
                             // are siblings under the module folder, not nested
                             // inside the previous section.
-                            let subheader_path =
-                                path.join(sanitize_filename::sanitize(&item.title));
+                            let subheader_path = path.join(item_name);
                             if !create_folder_if_not_exist_or_ignored(&subheader_path, &options)? {
                                 current_section = None;
                                 continue;
@@ -250,7 +251,9 @@ async fn process_module_items(
                         by_section.entry(section_path).or_default().push(file);
                     }
                     let mut all_filtered: Vec<File> = Vec::new();
-                    for (section_path, files) in by_section {
+                    for (section_path, mut files) in by_section {
+                        let mut seen = HashSet::new();
+                        files.retain(|file| seen.insert(file.id));
                         all_filtered.extend(filter_files(&options, &section_path, files));
                     }
                     if !all_filtered.is_empty() {

@@ -9,7 +9,10 @@ use crate::api::{get_canvas_api, get_pages};
 use crate::canvas::{Assignment, AssignmentResult, ProcessOptions, Submission};
 use crate::files::filter_files;
 use crate::html::process_html_links;
-use crate::utils::{create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json};
+use crate::utils::{
+    create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json,
+    sanitize_filename_with_id,
+};
 
 pub async fn process_assignments(
     (url, path): (String, PathBuf),
@@ -63,7 +66,8 @@ pub async fn process_assignments(
 
                 for assignment in assignments {
                     if let Some(ref folder_path) = assignments_folder_path {
-                        // let assignment_path = path.join(sanitize_filename::sanitize(&assignment.name));
+                        let assignment_name =
+                            sanitize_filename_with_id(assignment.id, &assignment.name);
                         let submissions_url =
                             format!("{}assignments/{}/submissions/", url, assignment.id);
                         fork!(
@@ -75,7 +79,7 @@ pub async fn process_assignments(
                         if let Some(desc) = assignment.description {
                             fork!(
                                 process_html_links,
-                                (desc, folder_path.clone(), assignment.name.clone()),
+                                (desc, folder_path.clone(), assignment_name),
                                 (String, PathBuf, String),
                                 options.clone()
                             );
@@ -207,7 +211,7 @@ async fn process_submissions(
     let resp = get_canvas_api(submissions_url.clone(), &options).await?;
     let submissions_body = resp.text().await?;
 
-    let assignment_name = sanitize_filename::sanitize(&assignment.name);
+    let assignment_name = sanitize_filename_with_id(assignment.id, &assignment.name);
     let assignment_folder_path = path.join(assignment_name.clone());
     if let Some(submissions_json) = get_raw_json_path(
         &path,
@@ -228,8 +232,15 @@ async fn process_submissions(
         let submissions_result = serde_json::from_str::<Submission>(&submissions_body);
         match submissions_result {
             Result::Ok(submissions) => {
-                let mut filtered_files =
-                    filter_files(&options, &assignment_folder_path, submissions.attachments);
+                let files = submissions
+                    .attachments
+                    .into_iter()
+                    .map(|mut file| {
+                        file.display_name = format!("{}_{}", file.id, file.display_name);
+                        file
+                    })
+                    .collect();
+                let mut filtered_files = filter_files(&options, &assignment_folder_path, files);
 
                 if !filtered_files.is_empty() {
                     // create folder for assignment if there are files to download

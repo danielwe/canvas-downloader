@@ -10,7 +10,10 @@ use crate::api::{get_canvas_api, get_pages};
 use crate::canvas::{Discussion, DiscussionResult, DiscussionView, File, ProcessOptions};
 use crate::files::filter_files;
 use crate::html::process_html_links;
-use crate::utils::{create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json};
+use crate::utils::{
+    create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json,
+    sanitize_filename_with_id,
+};
 
 pub async fn process_discussions(
     (url, announcement, path): (String, bool, PathBuf),
@@ -256,7 +259,7 @@ fn html_escape(s: &str) -> String {
 }
 
 fn discussion_name(discussion: &Discussion) -> String {
-    sanitize_filename::sanitize(format!("{}_{}", discussion.id, discussion.title))
+    sanitize_filename_with_id(discussion.id, &discussion.title)
 }
 
 async fn process_discussion_view(

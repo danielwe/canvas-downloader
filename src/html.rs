@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,6 +14,23 @@ use select::predicate::Name;
 use crate::canvas::{File, ProcessOptions};
 use crate::files::{filter_files, prepare_link_for_download, process_file_id};
 use crate::utils::create_folder_if_not_exist_or_ignored;
+
+fn idless_source(file: &File) -> String {
+    Url::parse(&file.url)
+        .map(|url| url.path().to_string())
+        .unwrap_or_else(|_| file.url.clone())
+}
+
+fn prefix_file_name(file: &mut File) {
+    if file.id != 0 {
+        file.display_name = format!("{}_{}", file.id, file.display_name);
+        return;
+    }
+
+    let mut hasher = DefaultHasher::new();
+    idless_source(file).hash(&mut hasher);
+    file.display_name = format!("{:016x}_{}", hasher.finish(), file.display_name);
+}
 
 /// process_html_links processes HTML content to find links and add them to the download queue.
 /// will create a folder of the given folder_name under path if there are any files to download.
@@ -43,6 +63,10 @@ pub async fn process_html_links(
     .await
     .into_iter()
     .filter_map(|x| x.ok())
+    .map(|mut file| {
+        prefix_file_name(&mut file);
+        file
+    })
     .collect::<Vec<File>>();
 
     // If image is from canvas it is likely the file url gives permission denied, so download from the CDN
@@ -63,9 +87,23 @@ pub async fn process_html_links(
         .await
         .into_iter()
         .filter_map(|x| x.ok())
+        .map(|mut file| {
+            prefix_file_name(&mut file);
+            file
+        })
         .collect::<Vec<File>>()
         .as_mut(),
     );
+
+    let mut seen = HashSet::new();
+    link_files.retain(|file| {
+        let source = if file.id == 0 {
+            (0, idless_source(file))
+        } else {
+            (file.id, String::new())
+        };
+        seen.insert(source)
+    });
 
     let mut filtered_files = filter_files(&options, &destination_path, link_files);
 

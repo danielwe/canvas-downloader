@@ -8,7 +8,10 @@ use anyhow::{Context, Result};
 use crate::api::{get_canvas_api, get_pages};
 use crate::canvas::{PageBody, PageResult, ProcessOptions};
 use crate::html::process_html_links;
-use crate::utils::{create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json};
+use crate::utils::{
+    create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json,
+    sanitize_filename_with_id,
+};
 
 pub async fn process_pages(
     (url, path): (String, PathBuf),
@@ -62,8 +65,8 @@ pub async fn process_pages(
                         let page_url = format!("{}pages/{}", url, page.url);
                         fork!(
                             process_page_body,
-                            (page_url, page.title, pages_path.clone()),
-                            (String, String, PathBuf),
+                            (page_url, pages_path.clone()),
+                            (String, PathBuf),
                             options.clone()
                         )
                     }
@@ -92,39 +95,38 @@ pub async fn process_pages(
 }
 
 pub async fn process_page_body(
-    (url, title, path): (String, String, PathBuf),
+    (url, path): (String, PathBuf),
     options: Arc<ProcessOptions>,
 ) -> Result<()> {
     let page_resp = get_canvas_api(url.clone(), &options).await?;
-
-    let title = sanitize_filename::sanitize(&title);
     let page_resp_text = page_resp.text().await?;
-
-    if let Some(page_file_path) = get_raw_json_path(
-        &path,
-        &format!("{}.json", title),
-        &options.base_path,
-        options.save_json,
-    )? {
-        let mut page_file = std::fs::File::create(page_file_path.clone())
-            .with_context(|| format!("Unable to create file for {:?}", page_file_path))?;
-
-        let pretty_json = prettify_json(&page_resp_text).unwrap_or(page_resp_text.clone());
-        page_file
-            .write_all(pretty_json.as_bytes())
-            .with_context(|| format!("Could not write to file {:?}", page_file_path))?;
-    }
 
     let page_body_result = serde_json::from_str::<PageBody>(&page_resp_text);
     match page_body_result {
         Result::Ok(page_body) => {
+            let page_name = sanitize_filename_with_id(page_body.page_id, &page_body.title);
+            if let Some(page_file_path) = get_raw_json_path(
+                &path,
+                &format!("{page_name}.json"),
+                &options.base_path,
+                options.save_json,
+            )? {
+                let mut page_file = std::fs::File::create(page_file_path.clone())
+                    .with_context(|| format!("Unable to create file for {:?}", page_file_path))?;
+
+                let pretty_json = prettify_json(&page_resp_text).unwrap_or(page_resp_text.clone());
+                page_file
+                    .write_all(pretty_json.as_bytes())
+                    .with_context(|| format!("Could not write to file {:?}", page_file_path))?;
+            }
+
             let page_html = format!(
                 "<html><head><title>{}</title></head><body>{}</body></html>",
                 page_body.title,
                 page_body.body.unwrap_or_default()
             );
 
-            let page_html_path = path.join(format!("{}.html", title));
+            let page_html_path = path.join(format!("{page_name}.html"));
             let mut page_html_file = std::fs::File::create(page_html_path.clone())
                 .with_context(|| format!("Unable to create file for {:?}", page_html_path))?;
 
@@ -134,7 +136,7 @@ pub async fn process_page_body(
 
             fork!(
                 process_html_links,
-                (page_html, path, title),
+                (page_html, path, page_name),
                 (String, PathBuf, String),
                 options.clone()
             )
