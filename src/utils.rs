@@ -203,6 +203,10 @@ mod tests {
             sanitize_typed_name("file", "42", "week/one"),
             "file_42_weekone"
         );
+        assert_eq!(
+            sanitize_typed_name("course", "123", "BIO/101"),
+            "course_123_BIO101"
+        );
         assert_ne!(
             sanitize_typed_name("file", "42", "same"),
             sanitize_typed_name("folder", "42", "same")

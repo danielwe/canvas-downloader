@@ -42,6 +42,7 @@ use syllabus::process_syllabus;
 use users::process_users;
 use utils::{
     create_folder_if_not_exist_or_ignored, format_bytes, ignored, print_all_courses_by_term,
+    sanitize_typed_name,
 };
 use videos::process_videos;
 
@@ -366,9 +367,11 @@ async fn main() -> Result<()> {
 
     for course in courses_to_download {
         // Prep path and mkdir -p
-        let course_folder_path = args
-            .destination_folder
-            .join(course.course_code.replace('/', "_"));
+        let course_folder_path = args.destination_folder.join(sanitize_typed_name(
+            "course",
+            &course.id.to_string(),
+            &course.course_code,
+        ));
         if !create_folder_if_not_exist_or_ignored(&course_folder_path, &options)? {
             continue;
         }
