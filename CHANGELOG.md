@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Top-level course directories now use typed, stable ID-prefixed sanitized names (`course_<id>_<course-code>`), preventing courses with equal or sanitization-equivalent codes from sharing an output tree.
-- Canvas Files folders (including each course's Files root folder) and files now use typed, stable ID-prefixed sanitized names (`folder_<id>_<name>` and `file_<id>_<name>`). Panopto subfolders and sessions likewise use their string identities. This prevents equal or sanitization-equivalent names from colliding across namespaces.
+- Top-level course directories now use stable ID-prefixed sanitized names (`<id>_<course-code>`), preventing courses with equal or sanitization-equivalent codes from sharing an output tree.
+- Canvas Files subfolders and files now use stable ID-prefixed sanitized names (`d<id>_<name>` and `<id>_<name>`); the redundant Canvas Files root remains flattened into the top-level `files` directory. Panopto subfolders and sessions follow the same short naming scheme using their string identities. This prevents equal or sanitization-equivalent names from colliding across namespaces.
 - The completed global download queue is now deduplicated by destination and stable source identity before dry-run reporting or downloads; conflicting sources targeting one path fail clearly instead of racing or overwriting.
 - Saved `modules.json` and Panopto `sessions.json` files now aggregate every API page into one valid JSON document in API order while retaining raw response fields.
 - Module items under a `SubHeader` are now placed inside that subheader's folder instead of being flattened into the module folder. Files, pages, and `.url` shortcuts following a `SubHeader` are routed into a sibling section folder until the next `SubHeader`, including across API page boundaries; ignored subheader folders also skip their contents. Saved `module_items.json` files now contain every API page instead of only the final page.

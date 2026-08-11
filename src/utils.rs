@@ -119,10 +119,6 @@ pub fn prettify_json(json_str: &str) -> Result<String> {
     Ok(serde_json::to_string_pretty(&value)?)
 }
 
-pub fn sanitize_typed_name(kind: &str, id: &str, name: &str) -> String {
-    sanitize_filename::sanitize(format!("{kind}_{id}_{name}"))
-}
-
 pub fn sanitize_filename_with_id(id: u32, name: &str) -> String {
     sanitize_filename::sanitize(format!("{id}_{name}"))
 }
@@ -198,46 +194,11 @@ mod tests {
     }
 
     #[test]
-    fn typed_names_separate_namespaces_and_sanitize_after_prefixing() {
-        assert_eq!(
-            sanitize_typed_name("file", "42", "week/one"),
-            "file_42_weekone"
-        );
-        assert_eq!(
-            sanitize_typed_name("course", "123", "BIO/101"),
-            "course_123_BIO101"
-        );
+    fn course_names_use_stable_ids_without_a_type_prefix() {
+        assert_eq!(sanitize_filename_with_id(17, "BIO/101"), "17_BIO101");
         assert_ne!(
-            sanitize_typed_name("file", "42", "same"),
-            sanitize_typed_name("folder", "42", "same")
-        );
-        assert_ne!(
-            sanitize_typed_name("file", "42", "same"),
-            sanitize_filename_with_id(42, "same")
-        );
-        assert_ne!(
-            sanitize_typed_name("file", "42", "week/one"),
-            sanitize_typed_name("file", "43", "weekone")
-        );
-    }
-
-    #[test]
-    fn course_and_files_folder_names_use_stable_typed_ids() {
-        assert_eq!(
-            sanitize_typed_name("course", "17", "BIO/101"),
-            "course_17_BIO101"
-        );
-        assert_eq!(
-            sanitize_typed_name("folder", "23", "Week/One"),
-            "folder_23_WeekOne"
-        );
-        assert_ne!(
-            sanitize_typed_name("course", "17", "BIO/101"),
-            sanitize_typed_name("course", "18", "BIO101")
-        );
-        assert_ne!(
-            sanitize_typed_name("folder", "23", "Week/One"),
-            sanitize_typed_name("folder", "24", "WeekOne")
+            sanitize_filename_with_id(17, "BIO/101"),
+            sanitize_filename_with_id(18, "BIO101")
         );
     }
 }

@@ -14,7 +14,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::api::get_canvas_api;
 use crate::api::get_pages;
 use crate::canvas::{File, FileResult, FolderResult, ProcessOptions};
-use crate::utils::{create_folder_if_not_exist_or_ignored, ignored, sanitize_typed_name};
+use crate::utils::{create_folder_if_not_exist_or_ignored, ignored, sanitize_filename_with_id};
 
 pub async fn atomic_download_file(file: File, options: Arc<ProcessOptions>) -> Result<()> {
     // Create tmp file from hash
@@ -119,9 +119,12 @@ pub async fn process_folders(
             Ok(FolderResult::Ok(folders)) => {
                 for folder in folders {
                     // println!("  * {} - {}", folder.id, folder.name);
-                    let sanitized_folder_name =
-                        sanitize_typed_name("folder", &folder.id.to_string(), &folder.name);
-                    let folder_path = path.join(sanitized_folder_name);
+                    // The root is already represented by the top-level `files` directory.
+                    let folder_path = if folder.parent_folder_id.is_some() {
+                        path.join(output_folder_name(folder.id, &folder.name))
+                    } else {
+                        path.clone()
+                    };
 
                     match create_folder_if_not_exist_or_ignored(&folder_path, &options) {
                         Ok(false) => continue, // ignored
@@ -232,11 +235,15 @@ fn updated(filepath: &Path, new_modified: &str) -> bool {
     .unwrap_or(false)
 }
 
+fn output_folder_name(id: u32, name: &str) -> String {
+    sanitize_filename::sanitize(format!("d{id}_{name}"))
+}
+
 fn output_name(id: u32, display_name: &str) -> String {
     let name = if id == 0 {
         sanitize_filename::sanitize(display_name)
     } else {
-        sanitize_typed_name("file", &id.to_string(), display_name)
+        sanitize_filename_with_id(id, display_name)
     };
     name.nfc().collect()
 }
@@ -415,11 +422,13 @@ mod tests {
 
     #[test]
     fn canvas_file_output_names_have_one_identity_prefix() {
-        assert_eq!(output_name(42, "week/one"), "file_42_weekone");
-        assert_eq!(
-            output_name(42, "file_42_week/one"),
-            "file_42_file_42_weekone"
-        );
+        assert_eq!(output_name(42, "week/one"), "42_weekone");
+        assert_eq!(output_name(42, "file_42_week/one"), "42_file_42_weekone");
+    }
+
+    #[test]
+    fn canvas_folder_output_names_use_a_short_directory_prefix() {
+        assert_eq!(output_folder_name(23, "Week/One"), "d23_WeekOne");
     }
 
     #[test]

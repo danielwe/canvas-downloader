@@ -16,9 +16,7 @@ use serde_json::json;
 use crate::api::get_canvas_api;
 use crate::canvas::{File, PanoptoDeliveryInfo, PanoptoSessionInfo, ProcessOptions, Session};
 use crate::files::filter_files;
-use crate::utils::{
-    create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json, sanitize_typed_name,
-};
+use crate::utils::{create_folder_if_not_exist_or_ignored, get_raw_json_path, prettify_json};
 
 pub async fn process_videos(
     (url, id, path): (String, u32, PathBuf),
@@ -202,11 +200,7 @@ async fn process_video_folder(
         // Subfolders are the same, so process only the first request
         if i == 0 {
             for subfolder in sessions.Subfolders {
-                let subfolder_path = path.join(sanitize_typed_name(
-                    "panopto-folder",
-                    &subfolder.ID,
-                    &subfolder.Name,
-                ));
+                let subfolder_path = path.join(panopto_folder_name(&subfolder.ID, &subfolder.Name));
                 if !create_folder_if_not_exist_or_ignored(&subfolder_path, &options)? {
                     continue;
                 }
@@ -264,8 +258,12 @@ fn aggregate_panopto_page(
     Ok(())
 }
 
+fn panopto_folder_name(id: &str, name: &str) -> String {
+    sanitize_filename::sanitize(format!("d{id}_{name}"))
+}
+
 fn panopto_session_name(result: &crate::canvas::PanoptoResult) -> String {
-    sanitize_typed_name("panopto-session", &result.DeliveryID, &result.SessionName)
+    sanitize_filename::sanitize(format!("{}_{}", result.DeliveryID, result.SessionName))
 }
 
 async fn process_session(
@@ -452,10 +450,18 @@ mod tests {
     }
 
     #[test]
-    fn panopto_string_ids_are_typed_and_sanitized() {
+    fn panopto_string_ids_are_short_and_sanitized() {
         assert_eq!(
-            sanitize_typed_name("panopto-folder", "folder/17", "Lectures/2026"),
-            "panopto-folder_folder17_Lectures2026"
+            panopto_folder_name("folder/17", "Lectures/2026"),
+            "dfolder17_Lectures2026"
         );
+        let result = crate::canvas::PanoptoResult {
+            DeliveryID: "delivery/17".into(),
+            SessionID: String::new(),
+            SessionName: "Lecture/One".into(),
+            StartTime: String::new(),
+            IosVideoUrl: String::new(),
+        };
+        assert_eq!(panopto_session_name(&result), "delivery17_LectureOne");
     }
 }
