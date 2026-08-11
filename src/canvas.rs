@@ -40,7 +40,6 @@ pub struct Folder {
     pub files_url: String,
     // pub for_submissions: bool,
     // pub can_upload: bool,
-    pub parent_folder_id: Option<u32>,
 }
 
 #[derive(Deserialize)]

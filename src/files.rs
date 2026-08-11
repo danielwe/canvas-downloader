@@ -231,16 +231,25 @@ fn updated(filepath: &Path, new_modified: &str) -> bool {
     })()
     .unwrap_or(false)
 }
+
+fn output_name(id: u32, display_name: &str) -> String {
+    let name = if id == 0 {
+        sanitize_filename::sanitize(display_name)
+    } else {
+        sanitize_typed_name("file", &id.to_string(), display_name)
+    };
+    name.nfc().collect()
+}
+
 pub fn filter_files(options: &ProcessOptions, path: &Path, files: Vec<File>) -> Vec<File> {
     // only download files that do not exist or are updated
     files
         .into_iter()
         .map(|mut f| {
+            let nfc_name = output_name(f.id, &f.display_name);
             if f.id != 0 {
-                f.display_name = sanitize_typed_name("file", &f.id.to_string(), &f.display_name);
+                f.display_name = nfc_name.clone();
             }
-            let sanitized = sanitize_filename::sanitize(&f.display_name);
-            let nfc_name: String = sanitized.nfc().collect();
             let mut filepath = path.join(&nfc_name);
             // Canvas may hand back the same filename in different Unicode
             // normalization forms across runs (e.g. NFC vs NFD for "ú"). On
@@ -337,50 +346,6 @@ pub async fn process_file_id(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn file(id: u32, url: &str, destination: &str) -> File {
-        File {
-            id,
-            folder_id: None,
-            display_name: "x".into(),
-            size: 1,
-            url: url.into(),
-            updated_at: "2020-01-01T00:00:00Z".into(),
-            locked_for_user: false,
-            filepath: destination.into(),
-        }
-    }
-
-    #[test]
-    fn global_destination_dedup_and_conflict_detection() {
-        let mut duplicates = vec![
-            file(7, "https://a/one?sig=1", "out"),
-            file(7, "https://a/two", "out"),
-        ];
-        enforce_unique_destinations(&mut duplicates)
-            .expect("same Canvas identity should deduplicate");
-        assert_eq!(duplicates.len(), 1);
-        let mut url_duplicates = vec![
-            file(0, "https://a/image?sig=1", "img"),
-            file(0, "https://a/image?sig=2", "img"),
-        ];
-        enforce_unique_destinations(&mut url_duplicates).expect("query strings are not identity");
-        assert_eq!(url_duplicates.len(), 1);
-        let mut different_origins = vec![
-            file(0, "https://a/image", "img"),
-            file(0, "https://a:8443/image", "img"),
-        ];
-        assert!(enforce_unique_destinations(&mut different_origins).is_err());
-        let mut conflict = vec![
-            file(1, "https://a/one", "out"),
-            file(2, "https://a/two", "out"),
-        ];
-        assert!(enforce_unique_destinations(&mut conflict).is_err());
-    }
-}
 pub async fn prepare_link_for_download(
     (link, path): (String, PathBuf),
     options: Arc<ProcessOptions>,
@@ -429,4 +394,93 @@ pub async fn prepare_link_for_download(
         filepath: path.join(sanitized_filename),
     };
     Ok(file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(id: u32, url: &str, destination: &str) -> File {
+        File {
+            id,
+            folder_id: None,
+            display_name: "x".into(),
+            size: 1,
+            url: url.into(),
+            updated_at: "2020-01-01T00:00:00Z".into(),
+            locked_for_user: false,
+            filepath: destination.into(),
+        }
+    }
+
+    #[test]
+    fn canvas_file_output_names_have_one_identity_prefix() {
+        assert_eq!(output_name(42, "week/one"), "file_42_weekone");
+        assert_eq!(
+            output_name(42, "file_42_week/one"),
+            "file_42_file_42_weekone"
+        );
+    }
+
+    #[test]
+    fn canvas_file_ids_disambiguate_colliding_raw_names() {
+        assert_ne!(output_name(42, "week/one"), output_name(43, "weekone"));
+    }
+
+    #[test]
+    fn id_zero_output_names_remain_untyped() {
+        assert_eq!(output_name(0, "week/one"), "weekone");
+    }
+
+    #[test]
+    fn same_destination_and_canvas_id_deduplicates() {
+        let mut duplicates = vec![
+            file(7, "https://a/one?sig=1", "out"),
+            file(7, "https://a/two", "out"),
+        ];
+        enforce_unique_destinations(&mut duplicates)
+            .expect("same Canvas identity should deduplicate");
+        assert_eq!(duplicates.len(), 1);
+    }
+
+    #[test]
+    fn same_idless_url_ignores_query_and_fragment() {
+        let mut url_duplicates = vec![
+            file(0, "https://a/image?sig=1", "img"),
+            file(0, "https://a/image?sig=2#part", "img"),
+        ];
+        enforce_unique_destinations(&mut url_duplicates).expect("query strings are not identity");
+        assert_eq!(url_duplicates.len(), 1);
+    }
+
+    #[test]
+    fn differing_canvas_ids_conflict() {
+        let mut conflict = vec![
+            file(1, "https://a/one", "out"),
+            file(2, "https://a/two", "out"),
+        ];
+        assert!(enforce_unique_destinations(&mut conflict).is_err());
+    }
+
+    #[test]
+    fn differing_url_scheme_or_explicit_port_conflicts() {
+        for other in ["http://a/image", "https://a:8443/image"] {
+            let mut files = vec![file(0, "https://a/image", "img"), file(0, other, "img")];
+            assert!(enforce_unique_destinations(&mut files).is_err());
+        }
+    }
+
+    #[test]
+    fn distinct_destinations_retain_input_order() {
+        let mut files = vec![
+            file(3, "https://a/three", "third"),
+            file(1, "https://a/one", "first"),
+            file(2, "https://a/two", "second"),
+        ];
+        enforce_unique_destinations(&mut files).expect("destinations are distinct");
+        assert_eq!(
+            files.iter().map(|file| file.id).collect::<Vec<_>>(),
+            vec![3, 1, 2]
+        );
+    }
 }

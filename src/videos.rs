@@ -268,56 +268,6 @@ fn panopto_session_name(result: &crate::canvas::PanoptoResult) -> String {
     sanitize_typed_name("panopto-session", &result.DeliveryID, &result.SessionName)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn panopto_pages_append_results_and_keep_first_subfolders() {
-        let mut aggregate = None;
-        aggregate_panopto_page(&mut aggregate, serde_json::json!({"d":{"Results":[{"id":1}],"Subfolders":[{"ID":"a"}],"TotalNumber":2}})).expect("first page");
-        aggregate_panopto_page(
-            &mut aggregate,
-            serde_json::json!({"d":{"Results":[{"id":2}],"Subfolders":[{"ID":"a"}]}}),
-        )
-        .expect("second page");
-        let value = aggregate.expect("aggregate");
-        assert_eq!(
-            value
-                .pointer("/d/Results")
-                .and_then(|v| v.as_array())
-                .map(Vec::len),
-            Some(2)
-        );
-        assert_eq!(
-            value
-                .pointer("/d/Subfolders")
-                .and_then(|v| v.as_array())
-                .map(Vec::len),
-            Some(1)
-        );
-        assert_eq!(
-            value.pointer("/d/TotalNumber").and_then(|v| v.as_u64()),
-            Some(2)
-        );
-    }
-
-    #[test]
-    fn panopto_delivery_ids_disambiguate_one_session() {
-        let result = |delivery_id: &str| crate::canvas::PanoptoResult {
-            DeliveryID: delivery_id.into(),
-            SessionID: "shared-session".into(),
-            SessionName: "Lecture".into(),
-            StartTime: String::new(),
-            IosVideoUrl: String::new(),
-        };
-        assert_ne!(
-            panopto_session_name(&result("delivery-1")),
-            panopto_session_name(&result("delivery-2"))
-        );
-    }
-}
-
 async fn process_session(
     (host, result, client, path): (
         String,
@@ -450,4 +400,62 @@ async fn process_session(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panopto_pages_append_results_and_keep_first_subfolders() {
+        let mut aggregate = None;
+        aggregate_panopto_page(&mut aggregate, serde_json::json!({"d":{"Results":[{"id":1}],"Subfolders":[{"ID":"a"}],"TotalNumber":2}})).expect("first page");
+        aggregate_panopto_page(
+            &mut aggregate,
+            serde_json::json!({"d":{"Results":[{"id":2}],"Subfolders":[{"ID":"a"}]}}),
+        )
+        .expect("second page");
+        let value = aggregate.expect("aggregate");
+        assert_eq!(
+            value
+                .pointer("/d/Results")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            value
+                .pointer("/d/Subfolders")
+                .and_then(|v| v.as_array())
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            value.pointer("/d/TotalNumber").and_then(|v| v.as_u64()),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn panopto_delivery_ids_disambiguate_one_session() {
+        let result = |delivery_id: &str| crate::canvas::PanoptoResult {
+            DeliveryID: delivery_id.into(),
+            SessionID: "shared-session".into(),
+            SessionName: "Lecture".into(),
+            StartTime: String::new(),
+            IosVideoUrl: String::new(),
+        };
+        assert_ne!(
+            panopto_session_name(&result("delivery-1")),
+            panopto_session_name(&result("delivery-2"))
+        );
+    }
+
+    #[test]
+    fn panopto_string_ids_are_typed_and_sanitized() {
+        assert_eq!(
+            sanitize_typed_name("panopto-folder", "folder/17", "Lectures/2026"),
+            "panopto-folder_folder17_Lectures2026"
+        );
+    }
 }

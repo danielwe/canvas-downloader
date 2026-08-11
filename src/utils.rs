@@ -220,4 +220,24 @@ mod tests {
             sanitize_typed_name("file", "43", "weekone")
         );
     }
+
+    #[test]
+    fn course_and_files_folder_names_use_stable_typed_ids() {
+        assert_eq!(
+            sanitize_typed_name("course", "17", "BIO/101"),
+            "course_17_BIO101"
+        );
+        assert_eq!(
+            sanitize_typed_name("folder", "23", "Week/One"),
+            "folder_23_WeekOne"
+        );
+        assert_ne!(
+            sanitize_typed_name("course", "17", "BIO/101"),
+            sanitize_typed_name("course", "18", "BIO101")
+        );
+        assert_ne!(
+            sanitize_typed_name("folder", "23", "Week/One"),
+            sanitize_typed_name("folder", "24", "WeekOne")
+        );
+    }
 }

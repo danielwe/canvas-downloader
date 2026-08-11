@@ -14,6 +14,12 @@ use crate::utils::{
     create_folder_if_not_exist_or_ignored, get_raw_json_path, sanitize_filename_with_id,
 };
 
+fn append_raw_json_page(raw: &mut Vec<serde_json::Value>, body: &str) -> serde_json::Result<()> {
+    let mut page = serde_json::from_str::<Vec<serde_json::Value>>(body)?;
+    raw.append(&mut page);
+    Ok(())
+}
+
 pub async fn process_modules(
     (url, path): (String, PathBuf),
     options: Arc<ProcessOptions>,
@@ -30,9 +36,8 @@ pub async fn process_modules(
 
         match module_result {
             Ok(ModuleResult::Ok(modules)) => {
-                let mut page_raw = serde_json::from_str::<Vec<serde_json::Value>>(&module_body)
+                append_raw_json_page(&mut raw_modules, &module_body)
                     .with_context(|| format!("Unable to preserve raw modules from {url}"))?;
-                raw_modules.append(&mut page_raw);
                 all_modules.extend(modules);
             }
 
@@ -99,12 +104,9 @@ async fn process_module_items(
 
         match items_result {
             Ok(ModuleItemResult::Ok(page_items)) => {
-                let mut page_raw_items = serde_json::from_str::<Vec<serde_json::Value>>(
-                    &items_body,
-                )
-                .with_context(|| format!("Unable to preserve raw module items from {url}"))?;
+                append_raw_json_page(&mut raw_items, &items_body)
+                    .with_context(|| format!("Unable to preserve raw module items from {url}"))?;
                 items.extend(page_items);
-                raw_items.append(&mut page_raw_items);
             }
 
             Ok(ModuleItemResult::Err { status }) => {
@@ -260,4 +262,45 @@ async fn process_module_items(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raw_json_pages_preserve_api_order_unknown_fields_and_page_boundaries() {
+        let mut aggregate = Vec::new();
+        append_raw_json_page(
+            &mut aggregate,
+            r#"[{"id":1,"unknown":{"kept":true}},{"id":2,"type":"SubHeader"}]"#,
+        )
+        .expect("page one");
+        append_raw_json_page(&mut aggregate, r#"[{"id":3,"type":"Page"}]"#).expect("page two");
+
+        assert_eq!(
+            aggregate
+                .iter()
+                .map(|item| item["id"].as_u64())
+                .collect::<Vec<_>>(),
+            vec![Some(1), Some(2), Some(3)]
+        );
+        assert_eq!(aggregate[0]["unknown"]["kept"], true);
+        assert_eq!(aggregate[1]["type"], "SubHeader");
+        assert_eq!(aggregate[2]["type"], "Page");
+    }
+
+    #[test]
+    fn raw_json_empty_pages_append_nothing() {
+        let mut aggregate = vec![serde_json::json!({"id": 1})];
+        append_raw_json_page(&mut aggregate, "[]").expect("empty array");
+        assert_eq!(aggregate, vec![serde_json::json!({"id": 1})]);
+    }
+
+    #[test]
+    fn raw_json_pages_reject_malformed_and_object_responses() {
+        for body in ["not json", r#"{"id":1}"#] {
+            assert!(append_raw_json_page(&mut Vec::new(), body).is_err());
+        }
+    }
 }
