@@ -85,7 +85,13 @@ pub async fn process_html_links(
         )
         .await
         .into_iter()
-        .filter_map(|x| x.ok())
+        .filter_map(|result| match result {
+            Ok(file) => Some(file),
+            Err(error) => {
+                tracing::warn!("Skipping embedded image: {error:#}");
+                None
+            }
+        })
         .map(|mut file| {
             prefix_idless_file_name(&mut file);
             file

@@ -581,7 +581,7 @@ async fn main() -> Result<()> {
         options.sem_requests.close();
         assert_eq!(options.n_active_requests.load(Ordering::Acquire), 0);
 
-        println!("📁 Files downloaded");
+        println!("📁 Downloads finished");
     }
 
     Ok(())

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
 use lazy_regex::regex;
 use reqwest::header;
@@ -26,7 +26,9 @@ pub async fn atomic_download_file(file: File, options: Arc<ProcessOptions>) -> R
 
     // Aborted download?
     if let Err(e) = download_file((&tmp_path, &file), options.clone()).await {
-        if let Err(e) = std::fs::remove_file(&tmp_path) {
+        if let Err(e) = std::fs::remove_file(&tmp_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
             tracing::error!(
                 "Failed to remove temporary file {tmp_path:?} for {}, err={e:?}",
                 file.display_name
@@ -67,10 +69,12 @@ async fn download_file(
         .await
         .with_context(|| format!("Something went wrong when reaching {}", canvas_file.url))?;
     if !resp.status().is_success() {
-        return Err(Error::msg(format!(
-            "Failed to download {}, got {resp:?}",
-            canvas_file.display_name
-        )));
+        anyhow::bail!(
+            "Failed to download {} from {}: HTTP {}",
+            canvas_file.display_name,
+            canvas_file.url,
+            resp.status()
+        );
     }
 
     // Create + Open file
@@ -364,21 +368,21 @@ pub async fn prepare_link_for_download(
         .timeout(Duration::from_secs(10))
         .send()
         .await?;
+    if !resp.status().is_success() {
+        anyhow::bail!(
+            "Unable to inspect embedded file {link}: HTTP {}",
+            resp.status()
+        );
+    }
     let headers = resp.headers();
     // get filename out of Content-Disposition header
     let filename = headers
         .get(header::CONTENT_DISPOSITION)
         .and_then(|x| x.to_str().ok())
-        .and_then(|x| regex!(r#"filename="(.*)""#).captures(x))
+        .and_then(|x| regex!(r#"filename="([^"]+)""#).captures(x))
         .and_then(|x| x.get(1))
-        .map(|x| x.as_str())
-        .unwrap_or_else(|| {
-            regex!(r"/([^/]+)$")
-                .captures(&link)
-                .and_then(|x| x.get(1))
-                .map(|x| x.as_str())
-                .unwrap_or("unknown")
-        });
+        .map(|x| x.as_str().to_string())
+        .unwrap_or_else(|| filename_from_url(&link));
     // last-modified header to TZ string
     let updated_at = headers
         .get(header::LAST_MODIFIED)
@@ -389,11 +393,11 @@ pub async fn prepare_link_for_download(
         })
         .unwrap_or_else(|| Local::now().to_rfc3339());
 
-    let sanitized_filename = sanitize_filename::sanitize(filename);
+    let sanitized_filename = sanitize_filename::sanitize(&filename);
     let file = File {
         id: 0,
         folder_id: None,
-        display_name: filename.to_string(),
+        display_name: filename,
         size: 0,
         url: link.clone(),
         updated_at,
@@ -401,6 +405,18 @@ pub async fn prepare_link_for_download(
         filepath: path.join(sanitized_filename),
     };
     Ok(file)
+}
+
+fn filename_from_url(link: &str) -> String {
+    reqwest::Url::parse(link)
+        .ok()
+        .and_then(|url| {
+            url.path_segments()?
+                .rev()
+                .find(|segment| !segment.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[cfg(test)]
@@ -439,6 +455,23 @@ mod tests {
     #[test]
     fn id_zero_output_names_remain_untyped() {
         assert_eq!(output_name(0, "week/one"), "weekone");
+    }
+
+    #[test]
+    fn url_fallback_filename_excludes_query_and_fragment() {
+        assert_eq!(
+            filename_from_url("https://canvas.example/files/42/download?hidden=1&wrap=1#preview"),
+            "download"
+        );
+    }
+
+    #[test]
+    fn url_fallback_filename_uses_last_nonempty_path_segment() {
+        assert_eq!(
+            filename_from_url("https://canvas.example/images/avatar.png/"),
+            "avatar.png"
+        );
+        assert_eq!(filename_from_url("not a URL"), "unknown");
     }
 
     #[test]
