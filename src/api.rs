@@ -1,7 +1,7 @@
 use crate::canvas::ProcessOptions;
 use anyhow::{Error, Result};
 use rand::Rng;
-use reqwest::{Response, Url, header};
+use reqwest::{Response, header};
 use std::time::Duration;
 
 pub async fn get_pages(link: String, options: &ProcessOptions) -> Result<Vec<Response>> {
@@ -15,18 +15,9 @@ pub async fn get_pages(link: String, options: &ProcessOptions) -> Result<Vec<Res
             )
         });
 
-        // Is last page?
-        let nex = rels.get("next")?; // ok to not have "next"
-        let cur = rels
-            .get("current")
-            .unwrap_or_else(|| panic!("Could not find current page for {}", resp.url()));
-        let last = rels.get("last")?;
-        if cur == last {
-            return None;
-        };
-
-        // Next page
-        Some(nex.raw_uri.clone())
+        // Canvas omits "next" on the final page. Other relations, including
+        // "current" and "last", are optional and are not needed here.
+        rels.get("next").map(|next| next.raw_uri.clone())
     }
 
     let mut link = Some(link);
@@ -45,16 +36,10 @@ pub async fn get_pages(link: String, options: &ProcessOptions) -> Result<Vec<Res
 }
 
 pub async fn get_canvas_api(url: String, options: &ProcessOptions) -> Result<Response> {
-    let mut query_pairs: Vec<(String, String)> = Vec::new();
-    // insert into query_pairs from url.query_pairs();
-    for (key, value) in Url::parse(&url)?.query_pairs() {
-        query_pairs.push((key.to_string(), value.to_string()));
-    }
     for retry in 0..3 {
         let resp = options
             .client
             .get(&url)
-            .query(&query_pairs)
             .bearer_auth(&options.canvas_token)
             .timeout(Duration::from_secs(10))
             .send()
