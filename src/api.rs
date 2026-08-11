@@ -1,10 +1,15 @@
 use crate::canvas::ProcessOptions;
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use rand::Rng;
 use reqwest::{Response, header};
 use std::time::Duration;
 
-pub async fn get_pages(link: String, options: &ProcessOptions) -> Result<Vec<Response>> {
+pub struct ApiPage {
+    pub url: String,
+    pub body: String,
+}
+
+pub async fn get_pages(link: String, options: &ProcessOptions) -> Result<Vec<ApiPage>> {
     fn parse_next_page(resp: &Response) -> Option<String> {
         // Parse LINK header
         let links = resp.headers().get(header::LINK)?.to_str().ok()?; // ok to not have LINK header
@@ -21,18 +26,25 @@ pub async fn get_pages(link: String, options: &ProcessOptions) -> Result<Vec<Res
     }
 
     let mut link = Some(link);
-    let mut resps = Vec::new();
+    let mut pages = Vec::new();
 
     while let Some(uri) = link {
         // GET request
         let resp = get_canvas_api(uri, options).await?;
 
-        // Get next page before returning for json
+        // Read pagination headers before consuming the response, then buffer the
+        // body immediately so its request timeout cannot expire while later
+        // pages are being fetched.
         link = parse_next_page(&resp);
-        resps.push(resp);
+        let url = resp.url().to_string();
+        let body = resp
+            .text()
+            .await
+            .with_context(|| format!("Unable to read paginated Canvas response from {url}"))?;
+        pages.push(ApiPage { url, body });
     }
 
-    Ok(resps)
+    Ok(pages)
 }
 
 pub async fn get_canvas_api(url: String, options: &ProcessOptions) -> Result<Response> {

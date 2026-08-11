@@ -28,8 +28,8 @@ pub async fn process_assignments(
     let mut assignments_folder_path = None;
 
     for pg in pages {
-        let uri = pg.url().to_string();
-        let page_body = pg.text().await?;
+        let uri = pg.url;
+        let page_body = pg.body;
 
         let assignment_result = serde_json::from_str::<AssignmentResult>(&page_body);
 

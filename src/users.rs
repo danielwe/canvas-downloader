@@ -34,7 +34,7 @@ pub async fn process_users(
             .with_context(|| format!("Unable to create file for {:?}", users_path_str))?;
 
         for pg in pages {
-            let page_body = pg.text().await?;
+            let page_body = pg.body;
 
             let pretty_json = prettify_json(&page_body).unwrap_or(page_body.clone());
             users_file

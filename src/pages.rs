@@ -24,8 +24,8 @@ pub async fn process_pages(
     let mut pages_folder_path = None;
 
     for pg in pages {
-        let uri = pg.url().to_string();
-        let page_body = pg.text().await?;
+        let uri = pg.url;
+        let page_body = pg.body;
 
         let page_result = serde_json::from_str::<PageResult>(&page_body);
 

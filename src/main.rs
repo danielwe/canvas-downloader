@@ -26,8 +26,6 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
-use futures::future::ready;
-use futures::{StreamExt, TryStreamExt, stream};
 use ignore::gitignore::GitignoreBuilder;
 use indicatif::ProgressStyle;
 
@@ -289,19 +287,18 @@ async fn main() -> Result<()> {
     });
 
     // Get courses
-    let courses: Vec<canvas::Course> = get_pages(courses_link.clone(), &options)
+    let course_pages = get_pages(courses_link.clone(), &options)
         .await?
         .into_iter()
-        .map(|resp| resp.json::<Vec<serde_json::Value>>()) // resp --> Result<Vec<json>>
-        .collect::<stream::FuturesUnordered<_>>() // (in any order)
-        .flat_map_unordered(None, |json_res| {
-            let jsons = json_res.unwrap_or_else(|e| panic!("Failed to parse courses, err={e}")); // Result<Vec<json>> --> Vec<json>
-            stream::iter(jsons.into_iter()) // Vec<json> --> json
-        })
-        .filter(|json| ready(json.get("enrollments").is_some())) // (enrolled?)
+        .map(|page| serde_json::from_str::<Vec<serde_json::Value>>(&page.body))
+        .collect::<serde_json::Result<Vec<_>>>()
+        .with_context(|| "Error when getting course json")?;
+    let courses: Vec<canvas::Course> = course_pages
+        .into_iter()
+        .flatten()
+        .filter(|json| json.get("enrollments").is_some()) // (enrolled?)
         .map(serde_json::from_value) // json --> Result<course>
-        .try_collect()
-        .await
+        .collect::<serde_json::Result<Vec<_>>>()
         .with_context(|| "Error when getting course json")?; // Result<course> --> course
 
     // Filter courses by term IDs and/or course names

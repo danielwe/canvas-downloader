@@ -31,7 +31,7 @@ pub async fn process_modules(
     let mut raw_modules = Vec::new();
 
     for page in pages {
-        let module_body = page.text().await?;
+        let module_body = page.body;
         let module_result = serde_json::from_str::<ModuleResult>(&module_body);
 
         match module_result {
@@ -99,7 +99,7 @@ async fn process_module_items(
     let mut raw_items = Vec::new();
 
     for page in pages {
-        let items_body = page.text().await?;
+        let items_body = page.body;
         let items_result = serde_json::from_str::<ModuleItemResult>(&items_body);
 
         match items_result {

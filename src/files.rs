@@ -111,8 +111,8 @@ pub async fn process_folders(
 
     // For each page
     for pg in pages {
-        let uri = pg.url().to_string();
-        let folders_result = pg.json::<FolderResult>().await;
+        let uri = pg.url;
+        let folders_result = serde_json::from_str::<FolderResult>(&pg.body);
 
         match folders_result {
             // Got folders
@@ -178,8 +178,8 @@ pub async fn process_files(
 
     // For each page
     for pg in pages {
-        let uri = pg.url().to_string();
-        let files_result = pg.json::<FileResult>().await;
+        let uri = pg.url;
+        let files_result = serde_json::from_str::<FileResult>(&pg.body);
 
         match files_result {
             // Got files

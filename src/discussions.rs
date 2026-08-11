@@ -34,8 +34,8 @@ pub async fn process_discussions(
     let mut discussions_folder_path = None;
 
     for pg in pages {
-        let uri = pg.url().to_string();
-        let page_body = pg.text().await?;
+        let uri = pg.url;
+        let page_body = pg.body;
 
         let discussion_result = serde_json::from_str::<DiscussionResult>(&page_body);
 
